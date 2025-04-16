@@ -70,6 +70,8 @@ kotlin {
             // Google Drive API
             implementation(libs.google.api.services.drive)
 
+            implementation("org.slf4j:slf4j-nop:2.0.9")
+
             implementation("com.google.api-client:google-api-client-jackson2:2.7.2")
             implementation("com.google.api-client:google-api-client-gson:1.33.0")
 
@@ -131,9 +133,18 @@ compose.desktop {
         mainClass = "com.my.eventtablemerger.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Exe)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.my.eventtablemerger"
             packageVersion = "1.0.0"
+            windows {
+                console = false
+            }
         }
     }
+
+}
+
+
+tasks.register("buildDesktop") {
+    dependsOn("composeApp:package")
 }

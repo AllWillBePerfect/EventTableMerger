@@ -8,5 +8,7 @@ import com.my.eventtablemerger.core.navigation.AppScreens
 fun LoginScreen(
     navController: NavController
 ) {
-    LoginView {navController.navigate(AppScreens.Observe.route)}
+    LoginView(
+        navigateToObserveScreen = {navController.navigate(AppScreens.Observe.route)}
+    )
 }

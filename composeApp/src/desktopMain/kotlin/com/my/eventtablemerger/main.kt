@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl
 import com.google.api.client.auth.oauth2.Credential
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
@@ -53,6 +54,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.util.store.FileDataStoreFactory
 import com.my.eventtablemerger.core.di.initKoin
+import com.my.eventtablemerger.core.utils.FileLogger
 import com.my.eventtablemerger.features.screens.login.presentation.CredentialsProvider
 import com.my.eventtablemerger.features.screens.login.presentation.JSON_FACTORY
 import com.my.eventtablemerger.features.screens.login.presentation.SCOPES
@@ -61,6 +63,7 @@ import com.my.eventtablemerger.features.screens.search.ExcelOperations
 import com.my.eventtablemerger.features.screens.search.LeaderUser
 import com.my.eventtablemerger.features.screens.search.PlatformConfiguration
 import com.my.eventtablemerger.features.screens.search.PlatformWindowMeasure
+import com.my.eventtablemerger.test.desktopFileLoggerModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -72,16 +75,20 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.URI
 import javax.swing.JFileChooser
 import javax.swing.JFrame
+import javax.swing.JOptionPane
 
 @Composable
 fun DesktopTheme(
@@ -100,13 +107,16 @@ fun DesktopTheme(
 }
 
 fun main() {
-    initKoin(platformModules = listOf(
-        desktopCredentialsProviderModule,
-        desktopPlatformConfigurationModule,
-        desktopPlatformWindowMeasureModule,
-        desktopExcelOperationsModule
+    initKoin(
+        platformModules = listOf(
+            desktopCredentialsProviderModule,
+            desktopPlatformConfigurationModule,
+            desktopPlatformWindowMeasureModule,
+            desktopExcelOperationsModule,
+            desktopFileLoggerModule
 
-    )) {}
+        )
+    ) {}
     application {
         Window(onCloseRequest = ::exitApplication, title = "EventTableMerger") {
             App()
@@ -163,6 +173,7 @@ fun main() {
                     scope = scope
                 )
             }*/
+//            authorizeUser()
         }
     }
 }
@@ -195,8 +206,11 @@ fun DesktopApp(
 
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 val transferable = event.awtTransferable
-                val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File> ?: emptyList()
-                val newFiles = files.filter { it.name.endsWith(".xlsx") || it.name.endsWith(".xls") }.toSet()
+                val files =
+                    transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>
+                        ?: emptyList()
+                val newFiles =
+                    files.filter { it.name.endsWith(".xlsx") || it.name.endsWith(".xls") }.toSet()
                 onFilesSelected(selectedFiles + newFiles)
                 onMessageChange("Выбрано файлов: ${selectedFiles.size + newFiles.size}")
                 showTargetBorder = false
@@ -237,7 +251,9 @@ fun DesktopApp(
             chooser.isMultiSelectionEnabled = true
             val result = chooser.showOpenDialog(null)
             if (result == JFileChooser.APPROVE_OPTION) {
-                val newFiles = chooser.selectedFiles.filter { it.name.endsWith(".xlsx") || it.name.endsWith(".xls") }.toSet()
+                val newFiles =
+                    chooser.selectedFiles.filter { it.name.endsWith(".xlsx") || it.name.endsWith(".xls") }
+                        .toSet()
                 onFilesSelected(selectedFiles + newFiles)
                 onMessageChange("Выбрано файлов: ${selectedFiles.size}")
             }
@@ -270,7 +286,8 @@ fun DesktopApp(
                         try {
                             withContext(Dispatchers.IO) {
                                 val allData = selectedFiles.flatMap { readExcel(it) }
-                                val output = File(selectedFiles.first().parent, "merged_output.xlsx")
+                                val output =
+                                    File(selectedFiles.first().parent, "merged_output.xlsx")
                                 mergeToExcel(allData, output)
                             }
                             onMessageChange("Уникальные записи сохранены в: merged_output.xlsx")
@@ -368,85 +385,95 @@ suspend fun mergeToExcel(data: List<Pair<String, String>>, output: File) =
 
 
 class DesktopExcelOperations : ExcelOperations {
-    override suspend fun readExcelToMerge(file: File): List<LeaderUser> = withContext(Dispatchers.IO) {
-        val inputStream = FileInputStream(file)
-        val workbook = WorkbookFactory.create(inputStream)
-        val sheet = workbook.getSheetAt(0)
-        val data = mutableListOf<LeaderUser>()
-        val formatter = DataFormatter()
+    override suspend fun readExcelToMerge(file: File): List<LeaderUser> =
+        withContext(Dispatchers.IO) {
+            val inputStream = FileInputStream(file)
+            val workbook = WorkbookFactory.create(inputStream)
+            val sheet = workbook.getSheetAt(0)
+            val data = mutableListOf<LeaderUser>()
+            val formatter = DataFormatter()
 
-        for (rowIndex in 1 until sheet.physicalNumberOfRows) {
-            val row = sheet.getRow(rowIndex)
-            val idCell = row.getCell(0)
-            val nameCell = row.getCell(1)
-            val ageCell = row.getCell(2)
-            val companyCell = row.getCell(3)
-            val jobTitleCell = row.getCell(4)
-            val emailCell = row.getCell(11)
-            val phoneCell = row.getCell(12)
-            val cityCell = row.getCell(13)
+            for (rowIndex in 1 until sheet.physicalNumberOfRows) {
+                val row = sheet.getRow(rowIndex)
+                val idCell = row.getCell(0)
+                val nameCell = row.getCell(1)
+                val ageCell = row.getCell(2)
+                val companyCell = row.getCell(3)
+                val jobTitleCell = row.getCell(4)
+                val emailCell = row.getCell(11)
+                val phoneCell = row.getCell(12)
+                val cityCell = row.getCell(13)
 
-            if (idCell != null && nameCell != null && ageCell != null && emailCell != null && phoneCell != null && cityCell != null) {
-                val id = when (idCell.cellType) {
-                    CellType.NUMERIC -> idCell.numericCellValue.toLong().toString()
-                    else -> formatter.formatCellValue(idCell)
-                }.trim()
-                val name = formatter.formatCellValue(nameCell).trim()
-                val age = formatter.formatCellValue(ageCell).toIntOrNull() ?: 0
-                val company = companyCell?.let { formatter.formatCellValue(it).takeIf { it.isNotBlank() } }
-                val jobTitle = jobTitleCell?.let { formatter.formatCellValue(it).takeIf { it.isNotBlank() } }
-                val email = formatter.formatCellValue(emailCell).trim()
-                val phone = formatter.formatCellValue(phoneCell).trim()
-                val city = formatter.formatCellValue(cityCell).trim()
+                if (idCell != null && nameCell != null && ageCell != null && emailCell != null && phoneCell != null && cityCell != null) {
+                    val id = when (idCell.cellType) {
+                        CellType.NUMERIC -> idCell.numericCellValue.toLong().toString()
+                        else -> formatter.formatCellValue(idCell)
+                    }.trim()
+                    val name = formatter.formatCellValue(nameCell).trim()
+                    val age = formatter.formatCellValue(ageCell).toIntOrNull() ?: 0
+                    val company = companyCell?.let {
+                        formatter.formatCellValue(it).takeIf { it.isNotBlank() }
+                    }
+                    val jobTitle = jobTitleCell?.let {
+                        formatter.formatCellValue(it).takeIf { it.isNotBlank() }
+                    }
+                    val email = formatter.formatCellValue(emailCell).trim()
+                    val phone = formatter.formatCellValue(phoneCell).trim()
+                    val city = formatter.formatCellValue(cityCell).trim()
 
-                data.add(LeaderUser(id, name, company, jobTitle, age, email, phone, city))
+                    data.add(LeaderUser(id, name, company, jobTitle, age, email, phone, city))
+                }
             }
+
+            inputStream.close()
+            workbook.close()
+            return@withContext data
         }
 
-        inputStream.close()
-        workbook.close()
-        return@withContext data
-    }
+    override suspend fun readMergedOutput(file: File): List<LeaderUser> =
+        withContext(Dispatchers.IO) {
+            val inputStream = FileInputStream(file)
+            val workbook = WorkbookFactory.create(inputStream)
+            val sheet = workbook.getSheetAt(0)
+            val data = mutableListOf<LeaderUser>()
+            val formatter = DataFormatter()
 
-    override suspend fun readMergedOutput(file: File): List<LeaderUser> = withContext(Dispatchers.IO) {
-        val inputStream = FileInputStream(file)
-        val workbook = WorkbookFactory.create(inputStream)
-        val sheet = workbook.getSheetAt(0)
-        val data = mutableListOf<LeaderUser>()
-        val formatter = DataFormatter()
+            for (rowIndex in 0 until sheet.physicalNumberOfRows) {
+                val row = sheet.getRow(rowIndex)
+                val idCell = row.getCell(0)
+                val nameCell = row.getCell(1)
+                val ageCell = row.getCell(2)
+                val companyCell = row.getCell(3)
+                val jobTitleCell = row.getCell(4)
+                val emailCell = row.getCell(5)
+                val phoneCell = row.getCell(6)
+                val cityCell = row.getCell(7)
 
-        for (rowIndex in 0 until sheet.physicalNumberOfRows) {
-            val row = sheet.getRow(rowIndex)
-            val idCell = row.getCell(0)
-            val nameCell = row.getCell(1)
-            val ageCell = row.getCell(2)
-            val companyCell = row.getCell(3)
-            val jobTitleCell = row.getCell(4)
-            val emailCell = row.getCell(5)
-            val phoneCell = row.getCell(6)
-            val cityCell = row.getCell(7)
+                if (idCell != null && nameCell != null && ageCell != null && emailCell != null && phoneCell != null && cityCell != null) {
+                    val id = when (idCell.cellType) {
+                        CellType.NUMERIC -> idCell.numericCellValue.toLong().toString()
+                        else -> formatter.formatCellValue(idCell)
+                    }.trim()
+                    val name = formatter.formatCellValue(nameCell).trim()
+                    val age = formatter.formatCellValue(ageCell).toIntOrNull() ?: 0
+                    val company = companyCell?.let {
+                        formatter.formatCellValue(it).takeIf { it.isNotBlank() }
+                    }
+                    val jobTitle = jobTitleCell?.let {
+                        formatter.formatCellValue(it).takeIf { it.isNotBlank() }
+                    }
+                    val email = formatter.formatCellValue(emailCell).trim()
+                    val phone = formatter.formatCellValue(phoneCell).trim()
+                    val city = formatter.formatCellValue(cityCell).trim()
 
-            if (idCell != null && nameCell != null && ageCell != null && emailCell != null && phoneCell != null && cityCell != null) {
-                val id = when (idCell.cellType) {
-                    CellType.NUMERIC -> idCell.numericCellValue.toLong().toString()
-                    else -> formatter.formatCellValue(idCell)
-                }.trim()
-                val name = formatter.formatCellValue(nameCell).trim()
-                val age = formatter.formatCellValue(ageCell).toIntOrNull() ?: 0
-                val company = companyCell?.let { formatter.formatCellValue(it).takeIf { it.isNotBlank() } }
-                val jobTitle = jobTitleCell?.let { formatter.formatCellValue(it).takeIf { it.isNotBlank() } }
-                val email = formatter.formatCellValue(emailCell).trim()
-                val phone = formatter.formatCellValue(phoneCell).trim()
-                val city = formatter.formatCellValue(cityCell).trim()
-
-                data.add(LeaderUser(id, name, company, jobTitle, age, email, phone, city))
+                    data.add(LeaderUser(id, name, company, jobTitle, age, email, phone, city))
+                }
             }
-        }
 
-        inputStream.close()
-        workbook.close()
-        return@withContext data
-    }
+            inputStream.close()
+            workbook.close()
+            return@withContext data
+        }
 
     override suspend fun mergeToExcel(data: List<LeaderUser>, output: File) =
         withContext(Dispatchers.IO) {
@@ -472,16 +499,20 @@ class DesktopExcelOperations : ExcelOperations {
 }
 
 
-
 val desktopExcelOperationsModule = module {
     singleOf(::DesktopExcelOperations) { bind<ExcelOperations>() }
 }
 
-class DesktopCredentialsProvider : CredentialsProvider {
+/*class DesktopCredentialsProvider(
+    private val logger: FileLogger
+) : CredentialsProvider {
     override suspend fun getCredentials(): Credential {
+        logger.log("метод getCredentials запущен")
 //        val inputStream = DesktopCredentialsProvider::class.java.getResourceAsStream("/credentials.json")
         val inputStream = File("C:\\Users\\abwfaat\\Desktop\\credentials.json").inputStream()
+        logger.log("Получен inputStream")
         val clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, InputStreamReader(inputStream))
+        logger.log("Получен clientSecrets")
 
         val flow = GoogleAuthorizationCodeFlow.Builder(
             GoogleNetHttpTransport.newTrustedTransport(),
@@ -493,10 +524,123 @@ class DesktopCredentialsProvider : CredentialsProvider {
             .setAccessType("offline")
             .build()
 
-        val receiver = LocalServerReceiver.Builder().setPort(8888).build()
-        return AuthorizationCodeInstalledApp(flow, receiver).authorize("user")
+        logger.log("Создан flow")
+
+
+        val receiver = try {
+            logger.log("Начало процесса создания receiver")
+            LocalServerReceiver.Builder()
+                .setPort(8888)
+                .build().also {
+                    logger.log("Создан receiver")
+                }
+        } catch (e: Exception) {
+            logger.log("Произошла ошибка при создании receiver: ${e.message}")
+            throw IllegalStateException(e)
+        }
+
+        val authApp = object : AuthorizationCodeInstalledApp(flow, receiver) {
+            override fun onAuthorization(authorizationUrl: AuthorizationCodeRequestUrl?) {
+                val url = authorizationUrl?.build()
+                logger.log("Открой ссылку вручную в браузере: $authorizationUrl")
+                try {
+                    val uri = URI(url)
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop.getDesktop().browse(uri)
+                    } else {
+                        logger.log("Desktop API не поддерживается на этой платформе.")
+                    }
+                } catch (e: Exception) {
+                    logger.log("Не удалось открыть браузер: ${e.message}")
+                }
+            }
+        }
+        return authApp.authorize("user")
+    }
+
+}*/
+
+class DesktopCredentialsProvider(
+    private val logger: FileLogger
+) : CredentialsProvider {
+
+    override suspend fun getCredentials(): Credential {
+        logger.log("метод getCredentials запущен")
+
+        val inputStream = DesktopCredentialsProvider::class.java.getResourceAsStream("/credentials.json")
+            ?: throw FileNotFoundException("credentials.json не найден")
+
+        logger.log("Получен inputStream")
+        val clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, InputStreamReader(inputStream))
+        logger.log("Получен clientSecrets")
+
+        val flow = GoogleAuthorizationCodeFlow.Builder(
+            GoogleNetHttpTransport.newTrustedTransport(),
+            JSON_FACTORY,
+            clientSecrets,
+            SCOPES
+        )
+            .setDataStoreFactory(FileDataStoreFactory(File(TOKENS_DIRECTORY_PATH)))
+            .setAccessType("offline")
+            .build()
+
+        logger.log("Создан flow")
+
+        // Попробуем получить сохранённые данные
+        val storedCredential = flow.loadCredential("user")
+
+        if (storedCredential != null) {
+            logger.log("Найдены сохраненные учетные данные")
+            if (storedCredential.refreshToken != null) {
+                logger.log("Пробуем обновить токен")
+                if (storedCredential.refreshToken()) {
+                    logger.log("Токен обновлён успешно")
+                    return storedCredential
+                } else {
+                    logger.log("Не удалось обновить токен")
+                }
+            } else if (storedCredential.accessToken != null) {
+                logger.log("Токен доступа найден, возвращаем")
+                return storedCredential
+            }
+        } else {
+            logger.log("Учетные данные не найдены")
+        }
+
+        // Если ничего не сработало — ручная авторизация
+        val redirectUri = "urn:ietf:wg:oauth:2.0:oob"
+        val authorizationUrl = flow.newAuthorizationUrl().setRedirectUri(redirectUri).build()
+        logger.log("Открой ссылку вручную в браузере: $authorizationUrl")
+
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(URI(authorizationUrl))
+                logger.log("Открыт браузер")
+            }
+        } catch (e: Exception) {
+            logger.log("Не удалось открыть браузер: ${e.message}")
+        }
+
+        val code = JOptionPane.showInputDialog(
+            null,
+            "Вставьте код авторизации, полученный в браузере:",
+            "Google Авторизация",
+            JOptionPane.PLAIN_MESSAGE
+        )?.trim()
+
+        if (code.isNullOrBlank()) {
+            logger.log("Код не введен")
+            throw IllegalStateException("Код авторизации не был введен")
+        }
+
+        val tokenResponse = flow.newTokenRequest(code).setRedirectUri(redirectUri).execute()
+        val credential = flow.createAndStoreCredential(tokenResponse, "user")
+
+        logger.log("Авторизация завершена успешно")
+        return credential
     }
 }
+
 
 val desktopCredentialsProviderModule = module {
     singleOf(::DesktopCredentialsProvider) { bind<CredentialsProvider>() }
@@ -506,7 +650,7 @@ class DesktopPlatformConfiguration : PlatformConfiguration {
     @Composable
     override fun rememberPlatformConfiguration(): Int {
         val frame = JFrame()
-        val screenWidthPx =  mutableStateOf(frame.width)
+        val screenWidthPx = mutableStateOf(frame.width)
         val currentScreenWidthPx = rememberUpdatedState(screenWidthPx.value)
 
         LaunchedEffect(frame) {
@@ -527,7 +671,7 @@ val desktopPlatformConfigurationModule = module {
     singleOf(::DesktopPlatformConfiguration) { bind<PlatformConfiguration>() }
 }
 
-class DesktopPlatformWindowMeasure: PlatformWindowMeasure {
+class DesktopPlatformWindowMeasure : PlatformWindowMeasure {
     @Composable
     override fun getHeight(): Dp {
         val windowState = rememberWindowState()

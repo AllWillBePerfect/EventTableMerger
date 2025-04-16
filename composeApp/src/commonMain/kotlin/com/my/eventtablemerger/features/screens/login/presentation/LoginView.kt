@@ -4,9 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Button
-import androidx.compose.material.Scaffold
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +22,7 @@ import com.google.api.client.json.JsonFactory
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.FileList
+import com.my.eventtablemerger.core.utils.FileLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,10 +32,12 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 
+
 @Composable
 fun LoginView(
     credentialsProvider: CredentialsProvider = koinInject(),
-    navigateToObserveScreen: () -> Unit
+    navigateToObserveScreen: () -> Unit,
+    logger: FileLogger = koinInject()
 ) {
     var isAuthorized by remember { mutableStateOf(isUserAuthorized()) }
     var logMessage by remember { mutableStateOf("") } // State for log messages
@@ -44,6 +47,10 @@ fun LoginView(
         if (isAuthorized) {
             navigateToObserveScreen()
         }
+    }
+
+    LaunchedEffect(logMessage) {
+        logger.log(logMessage)
     }
 
     Scaffold(
@@ -62,8 +69,11 @@ fun LoginView(
                 CoroutineScope(Dispatchers.IO).launch {
                     logMessage = "Процесс авторизации запущен..." // Update log message
                     try {
+                        logMessage = "Получение credential"
                         val credential = credentialsProvider.getCredentials()
+                        logMessage = "Получение driveService"
                         val driveService = getDriveService(credential)
+                        logMessage = "Запрос файлов"
                         listFiles(driveService)
                         isAuthorized = true
                         logMessage = "Авторизация прошла успешно." // Update log message
