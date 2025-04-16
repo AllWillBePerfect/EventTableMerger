@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.google.api.client.auth.oauth2.AuthorizationCodeRequestUrl
 import com.google.api.client.auth.oauth2.Credential
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
@@ -61,6 +62,7 @@ import com.my.eventtablemerger.features.screens.search.ExcelOperations
 import com.my.eventtablemerger.features.screens.search.LeaderUser
 import com.my.eventtablemerger.features.screens.search.PlatformConfiguration
 import com.my.eventtablemerger.features.screens.search.PlatformWindowMeasure
+import com.my.eventtablemerger.test.authorizeUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -72,6 +74,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.event.ComponentAdapter
@@ -80,6 +83,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.URI
 import javax.swing.JFileChooser
 import javax.swing.JFrame
 
@@ -163,6 +167,7 @@ fun main() {
                     scope = scope
                 )
             }*/
+            authorizeUser()
         }
     }
 }
@@ -479,8 +484,8 @@ val desktopExcelOperationsModule = module {
 
 class DesktopCredentialsProvider : CredentialsProvider {
     override suspend fun getCredentials(): Credential {
-//        val inputStream = DesktopCredentialsProvider::class.java.getResourceAsStream("/credentials.json")
-        val inputStream = File("C:\\Users\\abwfaat\\Desktop\\credentials.json").inputStream()
+        val inputStream = DesktopCredentialsProvider::class.java.getResourceAsStream("/credentials.json")
+//        val inputStream = File("C:\\Users\\abwfaat\\Desktop\\credentials.json").inputStream()
         val clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, InputStreamReader(inputStream))
 
         val flow = GoogleAuthorizationCodeFlow.Builder(
@@ -493,10 +498,29 @@ class DesktopCredentialsProvider : CredentialsProvider {
             .setAccessType("offline")
             .build()
 
-        val receiver = LocalServerReceiver.Builder().setPort(8888).build()
-        return AuthorizationCodeInstalledApp(flow, receiver).authorize("user")
+        val receiver = LocalServerReceiver.Builder().setPort(8889).build()
+        val authApp = object : AuthorizationCodeInstalledApp(flow, receiver) {
+            override fun onAuthorization(authorizationUrl: AuthorizationCodeRequestUrl?) {
+                val url = authorizationUrl?.build()
+                println("Открой ссылку вручную в браузере: $authorizationUrl")
+                try {
+                    val uri = URI(url)
+                    if (Desktop.isDesktopSupported()) {
+                        Desktop.getDesktop().browse(uri)
+                    } else {
+                        println("Desktop API не поддерживается на этой платформе.")
+                    }
+                } catch (e: Exception) {
+                    println("Не удалось открыть браузер: ${e.message}")
+                }
+            }
+        }
+        return authApp.authorize("user")
     }
+
 }
+
+
 
 val desktopCredentialsProviderModule = module {
     singleOf(::DesktopCredentialsProvider) { bind<CredentialsProvider>() }
