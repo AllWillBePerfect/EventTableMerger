@@ -14,10 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -65,28 +67,34 @@ fun ObserveView(
     var folderToDelete by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        isLoading = true
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                println("Attempting to get credentials...")
-                val credential = credentialsProvider.getCredentials()
-                println("Credentials obtained successfully.")
+    var isRefresh by remember { mutableStateOf(true) }
 
-                val driveService = getDriveService(credential)
-                println("Drive service initialized.")
+    LaunchedEffect(isRefresh) {
+        if (isRefresh) {
+            isLoading = true
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    println("Attempting to get credentials...")
+                    val credential = credentialsProvider.getCredentials()
+                    println("Credentials obtained successfully.")
 
-                eventManagerFolderId = getOrCreateEventManagerFolder(driveService)
-                println("EventManager folder ID: $eventManagerFolderId")
+                    val driveService = getDriveService(credential)
+                    println("Drive service initialized.")
 
-                eventManagerFolderId?.let {
-                    folderInfos = listFolderInfos(driveService, it)
-                    println("Folder infos retrieved: $folderInfos")
+                    eventManagerFolderId = getOrCreateEventManagerFolder(driveService)
+                    println("EventManager folder ID: $eventManagerFolderId")
+
+                    eventManagerFolderId?.let {
+                        folderInfos = listFolderInfos(driveService, it)
+                        println("Folder infos retrieved: $folderInfos")
+                    }
+                } catch (e: Exception) {
+                    println("Error occurred: ${e.message}")
+                } finally {
+                    isLoading = false
+                    isRefresh = false
                 }
-            } catch (e: Exception) {
-                println("Error occurred: ${e.message}")
-            } finally {
-                isLoading = false
+
             }
         }
     }
@@ -196,7 +204,22 @@ fun ObserveView(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    Text(text = "Event Manager")
+                    Text(text = "Event Table Manager")
+                },
+                actions = {
+                    IconButton(
+                        modifier = Modifier.padding(16.dp),
+                        enabled = !isRefresh,
+                        onClick = {isRefresh = true},
+                        content = { Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Refresh",
+                        ) }
+                    )
+
+                    ElevatedButton(onClick = {}) {
+                        Text("Log Out")
+                    }
                 }
             )
         },
@@ -238,7 +261,12 @@ fun ObserveView(
 }
 
 @Composable
-private fun FolderCard(folderName: String, folderId: String, onItemClick: (String) -> Unit, onDeleteClick: () -> Unit) {
+private fun FolderCard(
+    folderName: String,
+    folderId: String,
+    onItemClick: (String) -> Unit,
+    onDeleteClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
