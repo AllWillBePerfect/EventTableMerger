@@ -39,8 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
+import com.my.eventtablemerger.core.drive.clearCredentials
 import com.my.eventtablemerger.features.screens.login.presentation.CredentialsProvider
 import com.my.eventtablemerger.features.screens.login.presentation.getDriveService
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +57,7 @@ data class FolderInfo(val name: String, val id: String)
 fun ObserveView(
     viewState: ObserveViewState,
     onAction: (ObserveAction) -> Unit,
+    navController: NavController,
     credentialsProvider: CredentialsProvider = koinInject(),
     navigateToSearchScreen: (String) -> Unit
 ) {
@@ -68,6 +71,8 @@ fun ObserveView(
     var isLoading by remember { mutableStateOf(false) }
 
     var isRefresh by remember { mutableStateOf(true) }
+
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(isRefresh) {
         if (isRefresh) {
@@ -200,6 +205,30 @@ fun ObserveView(
         )
     }
 
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Confirm Logout") },
+            text = { Text("Are you sure you want to log out?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        clearCredentials()
+                        navController.popBackStack()
+                        showLogoutDialog = false
+                    }
+                ) {
+                    Text("Yes")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("No")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -210,14 +239,18 @@ fun ObserveView(
                     IconButton(
                         modifier = Modifier.padding(16.dp),
                         enabled = !isRefresh,
-                        onClick = {isRefresh = true},
-                        content = { Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Refresh",
-                        ) }
+                        onClick = { isRefresh = true },
+                        content = {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Refresh",
+                            )
+                        }
                     )
 
-                    ElevatedButton(onClick = {}) {
+                    ElevatedButton(onClick = {
+                        showLogoutDialog = true
+                    }) {
                         Text("Log Out")
                     }
                 }

@@ -17,6 +17,7 @@ fun ObserveScreen(
     ObserveView(
         viewState = viewState,
         onAction = viewModel::dispatch,
+        navController = navController,
         navigateToSearchScreen = {
             navController.navigate(AppScreens.Search.route + "/${it}") {
                 launchSingleTop = true
