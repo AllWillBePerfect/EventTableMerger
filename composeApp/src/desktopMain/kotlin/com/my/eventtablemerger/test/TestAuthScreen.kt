@@ -81,9 +81,15 @@ fun authorizeUser(
 }
 
 class DesktopFileLogger: FileLogger {
-    private val logFile = File(
-        Paths.get(System.getProperty("user.home"), ".eventtablemerger", "myapp-log.txt").toString()
-    )
+    private val logFile: File
+
+    init {
+        val logDir = Paths.get(System.getProperty("user.home"), ".eventtablemerger").toFile()
+        if (!logDir.exists()) {
+            logDir.mkdirs()
+        }
+        logFile = File(logDir, "myapp-log.txt")
+    }
 
     override fun log(message: String) {
         logFile.appendText("${LocalDateTime.now()} | $message\n")
